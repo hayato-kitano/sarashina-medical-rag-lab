@@ -71,7 +71,9 @@ def main() -> None:
     tmp_dir = resolve(tcfg["output_dir"]).parent / "checkpoints" / run_id
 
     cuda = torch.cuda.is_available()
-    bf16 = cuda and torch.cuda.is_bf16_supported()
+    # T4（compute capability 7.5）では is_bf16_supported() が True を返すがエミュレーションで、
+    # TRL のカーネルが失敗するため、実際に bf16 対応（Ampere 以降 = 8.0+）の GPU に限定する
+    bf16 = cuda and torch.cuda.get_device_capability()[0] >= 8
     tokenizer = AutoTokenizer.from_pretrained(base_model)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token

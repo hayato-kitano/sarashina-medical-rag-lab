@@ -41,7 +41,7 @@ def pick_dtype(pref: str, device: str) -> torch.dtype:
     if pref != "auto":
         return getattr(torch, pref)
     if device == "cuda":
-        return torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
+        return torch.bfloat16 if torch.cuda.get_device_capability()[0] >= 8 else torch.float16
     # CPU/MPS: bfloat16 でメモリを半減（Streamlit Community Cloud 等の小さい環境でも載るように）
     return torch.bfloat16 if device == "cpu" else torch.float32
 
