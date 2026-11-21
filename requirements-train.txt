@@ -1,0 +1,10 @@
+# 学習用（Google Colab などGPU環境）。torch は Colab にプリインストール済みのものを使う。
+transformers>=5.0,<6
+peft>=0.17
+trl>=1.0
+datasets>=3.0
+accelerate>=1.0
+faiss-cpu>=1.9
+pyyaml>=6.0
+pypdf>=5.0
+pandas>=2.2

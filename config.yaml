@@ -1,0 +1,86 @@
+# Sarashina Medical RAG Lab 設定ファイル
+# 比較の公平性に関わる値（system_prompt / generation / rag）は学習前・学習後で共通に使われます。
+
+model:
+  base_model: sbintuitions/sarashina2.2-0.5b-instruct-v0.1
+  # 学習済みLoRAアダプター。"latest" で models/adapters/LATEST が指すものを使用
+  adapter: latest
+  adapters_dir: models/adapters     # GitHub にコミットして公開アプリから読み込む
+  device: auto          # auto / cuda / mps / cpu
+  dtype: auto           # auto / bfloat16 / float16 / float32
+
+generation:             # 学習前・学習後で完全に同一の値を使う（6.3 公平な比較条件）
+  max_new_tokens: 512
+  do_sample: false
+  repetition_penalty: 1.1
+  seed: 42
+
+system_prompt: |
+  あなたは医療情報について一般的な説明を行うアシスタントです。
+  以下を必ず守ってください。
+  - 医学用語・疾患・予防について、一般的で正確な情報を日本語で簡潔に説明する。
+  - 個別の診断、処方、薬の量の変更、治療方針の判断は行わない。必要な場合は医師・薬剤師への相談を勧める。
+  - 確かでないことは断言せず、分からない場合は分からないと答える。
+  - 緊急性が疑われる場合は、ただちに医療機関や救急（119番）への相談を勧める。
+
+rag:
+  embedding_model: intfloat/multilingual-e5-small   # テスト専用: "hashing"
+  docs_dir: data/rag_docs
+  index_dir: outputs/rag_index
+  chunk_size: 400        # 文字数
+  chunk_overlap: 80
+  top_k: 4
+  # 最上位の類似度がこの値未満なら「根拠不足」として回答を保留する。
+  # e5 は無関係な文でも 0.7 前後になりやすいので、実データで調整すること。
+  min_score: 0.82
+  insufficient_action: hold      # hold: 生成せず保留メッセージ / warn: 警告付きで生成
+  rag_instruction: |
+    以下の【参考文書】だけを根拠に質問へ答えてください。
+    回答中で根拠にした文書を [1] のように番号で示してください。
+    参考文書に答えが書かれていない場合は、推測で補わずに「参考文書には該当する情報がありません」と答えてください。
+
+safety:
+  # guide_only: 緊急性が疑われる質問はモデルで生成せず受診・相談の案内のみ返す
+  # guide_and_generate: 案内を表示したうえでモデル出力も生成（評価目的）
+  emergency_action: guide_only
+
+data:
+  source_dataset: kunishou/ApolloCorpus-ja
+  processed_dir: data/processed
+  n_samples: 5000        # 品質フィルタ後に使用する件数（3,000〜10,000）
+  split: {train: 0.9, validation: 0.05, test: 0.05}
+  seed: 42
+  filters:
+    min_prompt_chars: 8
+    max_prompt_chars: 600
+    min_response_chars: 30
+    max_response_chars: 1500
+    min_japanese_ratio: 0.35       # 日本語文字の割合がこれ未満なら翻訳失敗とみなす
+    max_ja_en_length_ratio: 1.6    # 日本語訳/英語原文 の文字数比の上限（訳の暴走）
+    min_ja_en_length_ratio: 0.12   # 下限（訳の欠落）
+    check_number_consistency: true # 英語原文の数値が訳文に残っているか
+  # 人手レビューで除外したIDを1行1件で記載（翻訳誤り・医学的に不正確な内容）
+  manual_exclusion_file: data/review/excluded_ids.txt
+
+training:
+  output_dir: models/adapters
+  num_train_epochs: 2
+  learning_rate: 2.0e-4
+  per_device_train_batch_size: 8
+  gradient_accumulation_steps: 2
+  max_length: 1024
+  warmup_ratio: 0.03
+  lr_scheduler_type: cosine
+  logging_steps: 10
+  eval_steps: 100
+  lora:
+    r: 16
+    alpha: 32
+    dropout: 0.05
+    target_modules: [q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj]
+
+evaluation:
+  questions_file: data/eval/general_questions.csv
+  jmedqa_file: data/eval/jmedqa_text.jsonl
+  runs_dir: outputs/eval_runs
+  history_file: outputs/history/chat_history.jsonl

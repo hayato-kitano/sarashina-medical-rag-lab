@@ -1,0 +1,31 @@
+# 【動作確認専用】ネットワーク・GPU無しで全工程を通すための上書き設定。本番では使わない。
+# 使い方: MEDRAG_CONFIG=tests/config.test.yaml streamlit run app.py
+_base: ../config.yaml
+
+model:
+  base_model: outputs/dummy/tiny-llama
+  adapters_dir: outputs/test/adapters
+
+generation:
+  max_new_tokens: 24
+
+rag:
+  embedding_model: hashing
+  index_dir: outputs/test/rag_index
+  min_score: 0.30
+
+data:
+  processed_dir: outputs/test/processed
+  n_samples: 200
+
+training:
+  output_dir: outputs/test/adapters
+  per_device_train_batch_size: 4
+  gradient_accumulation_steps: 1
+  max_length: 256
+  logging_steps: 2
+  eval_steps: 5
+
+evaluation:
+  runs_dir: outputs/test/eval_runs
+  history_file: outputs/test/history/chat_history.jsonl

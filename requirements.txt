@@ -1,0 +1,13 @@
+# アプリ実行用（ローカルPC / Streamlit Community Cloud）
+# CPU版 PyTorch を使う（CUDA版より大幅に小さい）。GPUのあるPCでは公式手順でCUDA版を入れてもよい。
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch>=2.6
+transformers>=5.0,<6
+peft>=0.17
+accelerate>=1.0
+faiss-cpu>=1.9
+streamlit>=1.50
+pandas>=2.2
+pyyaml>=6.0
+pypdf>=5.0
+numpy>=1.26

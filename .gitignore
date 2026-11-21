@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+.venv/
+.env
+.ipynb_checkpoints/
+# 生成物（再現可能なもの・大きいもの）
+outputs/
+models/checkpoints/
+data/raw/
+# 学習データ本体は大きいのでコミットしない（manifest.json でデータ版を追跡）
+data/processed/**/*.jsonl
+data/processed/**/*.csv
+# アダプター内の重複トークナイザーはベースモデルと同一なので除外
+models/adapters/*/tokenizer.json
