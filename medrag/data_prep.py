@@ -28,6 +28,12 @@ _JA = re.compile(r"[぀-ゟ゠-ヿ一-鿿㐀-䶿々ー]")
 _BAD_CHARS = re.compile(r"[�\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 _LOOP = re.compile(r"(.{2,30}?)\1{4,}", re.S)
 _NUM = re.compile(r"\d+(?:\.\d+)?")
+# 医療関連性フィルタ用（ApolloCorpus の論文QAには画像処理・材料工学など医療以外の話題も混在するため）
+_MEDICAL = re.compile(
+    r"患者|疾患|病|症|治療|診断|臨床|医|薬|投与|副作用|がん|癌|腫瘍|感染|ウイルス|細菌|ワクチン|免疫|"
+    r"血|心臓|心筋|脳|肺|肝|腎|糖尿|高血圧|手術|術後|予後|妊娠|小児|高齢|健康|予防|リスク因子|死亡率|"
+    r"有病率|発症|障害|炎症|ホルモン|代謝|栄養|看護|リハビリ|精神|うつ|認知症|検査|ケア"
+)
 
 
 def normalize(text: str) -> str:
@@ -70,6 +76,8 @@ def check_record(rec: dict, f: dict) -> str | None:
             return "翻訳誤り疑い:原文との長さ比"
         if f.get("check_number_consistency", True) and number_consistency(en_r, r) < 0.7:
             return "翻訳誤り疑い:数値の不一致"
+    if f.get("require_medical_terms", True) and len(_MEDICAL.findall(p + r)) < 2:
+        return "医療関連性が低い"
     if detect_dangerous_advice(r).flagged:
         return "安全性:個別診断・危険な助言の疑い"
     return None
