@@ -1,0 +1,2 @@
+run_id,created_at,base_model,base_revision,data_version,n_train,epochs,max_steps,lr,lora_r,lora_alpha,train_loss,final_eval_loss,runtime_sec
+lora-20261121-073926-ep2,2026-11-21T08:32:07+00:00,sbintuitions/sarashina2.2-0.5b-instruct-v0.1,local,data-91258c9425,4500,2.0,-1,0.0002,16,32,1.9921,2.0073,3133.0
