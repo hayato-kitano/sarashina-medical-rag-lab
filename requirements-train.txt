@@ -8,3 +8,6 @@ faiss-cpu>=1.9
 pyyaml>=6.0
 pypdf>=5.0
 pandas>=2.2
+# Sarashina のトークナイザー（SentencePiece）に必要
+sentencepiece>=0.2
+protobuf>=4.25
