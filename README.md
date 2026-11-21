@@ -54,10 +54,10 @@ streamlit run app.py
 
 ### 2. Google Colab で LoRA 学習
 
-1. `notebooks/train_colab.ipynb` を Colab で開く（GitHub から「ファイル → ノートブックを開く → GitHub」）
+1. https://colab.research.google.com/github/hayato-kitano/sarashina-medical-rag-lab/blob/main/notebooks/train_colab.ipynb を開く
 2. ランタイムを **T4 GPU** に変更
 3. 🔑シークレットに `GITHUB_TOKEN`（このリポジトリへの Contents: Read and write 権限を持つ Fine-grained token）を登録
-4. `GITHUB_REPO` を書き換えて上から実行
+4. 上から順に実行
 
 ノートブックは「データ変換 → 学習 → 簡易比較 → `models/adapters/<run_id>` を push」まで行います。
 push 後、`git pull` するとローカルの画面にも学習後モデルが現れます。
