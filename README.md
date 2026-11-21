@@ -79,15 +79,6 @@ python scripts/train_lora.py --epochs 2 --run-name ep2
 - 「採点・集計」タブで、質問ごとに左右比較しながら 正確性・関連性・根拠整合性・根拠不足時の応答・安全性 を採点 → 集計表・CSV
 - JMedQA：`python scripts/jmedqa_eval.py --prepare` → `python scripts/jmedqa_eval.py --limit 300`（画像不要のテキスト問題のみ）
 
-### 4. Streamlit Community Cloud で公開
-
-1. [share.streamlit.io](https://share.streamlit.io) に GitHub アカウントでサインイン
-2. 「Create app」→ このリポジトリ / ブランチ `main` / Main file `app.py`
-3. Advanced settings で Python 3.12 を選択して Deploy
-
-無料枠のメモリは 1 アプリ約 2.7GB です。本アプリは CPU では bfloat16 で読み込み（約1.6GB）収まるよう調整していますが、
-同時アクセスが多いと上限を超えることがあります。その場合は Hugging Face Spaces など、より大きな環境を検討してください。
-CPU 実行のため、回答生成には 1 回あたり数十秒〜1 分程度かかります（`generation.max_new_tokens` で調整）。
 
 ## 比較の公平性（要件 6.3）
 
