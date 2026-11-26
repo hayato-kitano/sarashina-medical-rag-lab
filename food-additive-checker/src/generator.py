@@ -192,7 +192,10 @@ def answer(additives: list[str], hits: list[dict], guides: list) -> dict:
 SUMMARY_SYSTEM = (
     "あなたは食品添加物とがんの関係を一般の人に説明するアシスタントです。"
     "【参考資料】に書かれている内容だけを使い、3〜5文の短い日本語でまとめてください。"
-    "各文の末尾に根拠にした資料の番号を[D1]のように付けてください。資料にないことは書かないでください。"
+    "各文の末尾に根拠にした資料の番号を[D1]のように付けてください。資料にないことは書かないでください。\n"
+    "書き方の例：\n"
+    "亜硝酸ナトリウムはIARC分類で2Aに関連づけられ、加工肉の発色剤として使われます。[D1]\n"
+    "IARC分類は有害性の証拠の強さを示すもので、摂取量でのリスクではありません。[D3]"
 )
 
 
@@ -229,19 +232,62 @@ def template_summary(hits, refs) -> str:
     return "\n".join(out)
 
 
+def _ref_text(ref: dict) -> str:
+    return " ".join(str(v) for v in ref.values())
+
+
+def ground_sentences(raw: str, refs: dict[str, dict], min_support: float = 0.5) -> list[str]:
+    """モデル出力を文に分け、出典の内容で裏付けられる文だけを残す。
+
+    - Sarashinaが付けた[D番号]が実在し、その資料と内容が一致する文 → 採用
+    - 出典番号がない文は、最も内容が一致する資料の番号を補う（一致率が高い場合のみ）
+    """
+    raw = clean_answer(raw, refs)
+    parts = [p.strip() for p in re.split(r"(?<=[。．！？])|\n", raw) if p and p.strip()]
+    # 「…です。[D1]」のように句点の後ろに来た出典番号を前の文に戻す
+    sents: list[str] = []
+    for p in parts:
+        if sents and re.fullmatch(r"(\[D\d+\])+", p):
+            sents[-1] += p
+        else:
+            sents.append(p)
+    kept, seen = [], set()
+    for snt in sents:
+        body = _CITE.sub("", snt).strip()
+        if len(body) < 8 or body in seen:
+            continue
+        b = _bigrams(body)
+        keys = [k for k in _CITE.findall(snt) if k in refs]
+        if keys:
+            sup = len(b & _bigrams(" ".join(_ref_text(refs[k]) for k in keys))) / max(1, len(b))
+        else:
+            scored = [(len(b & _bigrams(_ref_text(v))) / max(1, len(b)), k) for k, v in refs.items()]
+            sup, best = max(scored) if scored else (0, None)
+            if best and sup >= 0.6:
+                keys = [best]
+        if keys and sup >= min_support:
+            seen.add(body)
+            kept.append(body + "".join(f"[{k}]" for k in dict.fromkeys(keys)))
+    return kept
+
+
 def summarize(additives, hits, guides) -> dict:
-    """Sarashinaに短い要約を書かせ、根拠が確認できなければ資料からの要約に差し替える。"""
+    """Sarashinaに短い要約を書かせ、根拠が確認できた文だけを採用する。
+
+    根拠のある文が1つもなければ資料からの要約に差し替える。"""
     messages, refs = build_summary_messages(additives, hits, guides)
-    text, fallback, err = "", False, None
+    text, raw, fallback, err = "", "", False, None
     if config.MOCK or config.LLM_MODE == "off":
         text, fallback = template_summary(hits, refs), True
     else:
         try:
-            text = clean_answer(generate(messages, max_new_tokens=config.SUMMARY_MAX_NEW_TOKENS), refs)
+            raw = generate(messages, max_new_tokens=config.SUMMARY_MAX_NEW_TOKENS)
+            kept = ground_sentences(raw, refs)
+            if kept:
+                text = "\n".join(kept)
         except Exception as e:  # メモリ不足などでもアプリを止めない
             err = str(e)
-    check = verify_citations(text, refs) if text else {"coverage": 0, "used_refs": []}
-    if not fallback and (check["coverage"] < 0.5 or not check["used_refs"]):
-        text, fallback = template_summary(hits, refs), True
-        check = verify_citations(text, refs)
-    return {"text": text, "refs": refs, "verification": check, "fallback": fallback, "error": err}
+        if not text:
+            text, fallback = template_summary(hits, refs), True
+    check = verify_citations(text, refs)
+    return {"text": text, "raw": raw, "refs": refs, "verification": check, "fallback": fallback, "error": err}

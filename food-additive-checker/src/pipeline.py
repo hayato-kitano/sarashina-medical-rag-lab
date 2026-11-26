@@ -53,6 +53,7 @@ def analyze_text(label_text: str) -> dict:
         "fallback_used": gen["fallback"],
         "llm_mode": config.LLM_MODE,
         "llm_error": gen.get("error"),
+        "llm_raw": gen.get("raw", ""),
         "retrieval_backend": retriever.backend,
         "disclaimer": DISCLAIMER,
     }
