@@ -1,0 +1,11 @@
+# Streamlit Community Cloud（CPU）用。同リポジトリの既存アプリと同じ構成
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch>=2.6
+transformers>=5.0,<6
+peft>=0.17
+accelerate>=1.0
+streamlit>=1.50
+pillow>=10.0
+pytesseract>=0.3.10
+sentencepiece>=0.2
+protobuf>=4.25
