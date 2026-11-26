@@ -256,6 +256,8 @@ def ground_sentences(raw: str, refs: dict[str, dict], min_support: float = 0.5) 
         body = _CITE.sub("", snt).strip()
         if len(body) < 8 or body in seen:
             continue
+        if not re.search(r"[。．！？]$", body):  # 生成が途中で切れた文は使わない
+            continue
         b = _bigrams(body)
         keys = [k for k in _CITE.findall(snt) if k in refs]
         if keys:
@@ -284,6 +286,13 @@ def summarize(additives, hits, guides) -> dict:
             raw = generate(messages, max_new_tokens=config.SUMMARY_MAX_NEW_TOKENS)
             kept = ground_sentences(raw, refs)
             if kept:
+                # 注意度「高」の添加物に触れていない場合は、資料の一文で補う
+                key_of = {v["id"]: k for k, v in refs.items()}
+                joined = "".join(kept)
+                for h in hits:
+                    x = h["doc"].data
+                    if x["risk_level"] == "high" and f"[{key_of[x['id']]}]" not in joined:
+                        kept.insert(0, f"（資料より）{x['name']}：{x['summary']}[{key_of[x['id']]}]")
                 text = "\n".join(kept)
         except Exception as e:  # メモリ不足などでもアプリを止めない
             err = str(e)
