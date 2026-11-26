@@ -109,6 +109,13 @@ if st.session_state.get("ocr_text") is not None and photo is not None:
         unsafe_allow_html=True,
     )
 
+    if r.get("llm_raw"):
+        with st.expander("Sarashinaの出力（そのまま）を見る"):
+            st.caption("根拠（出典の内容）と一致した文だけを上の解説に採用しています。")
+            st.text(r["llm_raw"])
+    if r.get("llm_error"):
+        st.caption(f"説明生成モデルでエラーが発生したため、資料から解説を作成しました：{r['llm_error'][:200]}")
+
     if r["findings"]:
         st.subheader("見つかった添加物")
         for f in r["findings"]:
