@@ -1,11 +1,17 @@
-# Streamlit Community Cloud（CPU）用。同リポジトリの既存アプリと同じ構成
+# アプリ実行用（ローカルPC / Streamlit Community Cloud）。sarashina-medical-rag-lab と同じ構成
+# CPU版 PyTorch を使う（CUDA版より大幅に小さい）。GPUのあるPCでは公式手順でCUDA版を入れてもよい。
 --extra-index-url https://download.pytorch.org/whl/cpu
 torch>=2.6
 transformers>=5.0,<6
 peft>=0.17
 accelerate>=1.0
+faiss-cpu>=1.9
 streamlit>=1.50
+pyyaml>=6.0
+numpy>=1.26
 pillow>=10.0
+# 画像の文字読み取り（CPU環境）。本体は packages.txt の tesseract-ocr / tesseract-ocr-jpn
 pytesseract>=0.3.10
+# Sarashina のトークナイザー（SentencePiece）に必要
 sentencepiece>=0.2
 protobuf>=4.25

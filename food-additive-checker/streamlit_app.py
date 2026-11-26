@@ -1,57 +1,101 @@
-"""添加物チェック（Streamlit版）
+"""Sarashina Food Additive RAG — 食品ラベルの写真から、がんとの関連が指摘されている添加物を根拠付きで説明する。
 
-  streamlit run streamlit_app.py
+構成は sarashina-medical-rag-lab（app.py / medrag / config.yaml）に準拠。
+起動: streamlit run streamlit_app.py
+
+文字化け対策：画面に出す文字列は、すべて Streamlit の標準部品（st.text / st.badge / st.caption 等）か、
+Markdown エスケープ（foodrag.text.md_escape）を通してから表示する。HTML への埋め込みはしない。
 """
 from __future__ import annotations
 
-import html
-import re
+import hashlib
+import io
 
 import streamlit as st
-from PIL import Image
+from PIL import Image, UnidentifiedImageError
 
-from src import config
-from src.pipeline import analyze_text
-from src.vision import read_label
+from foodrag import __version__
+from foodrag.config import load_config, resolve
+from foodrag.models import SarashinaModel, list_adapters, resolve_adapter
+from foodrag.ocr import pick_backend, read_label
+from foodrag.pipeline import RISK_LABEL, analyze_text
+from foodrag.rag import Retriever, build_index, docs_changed_since_index, load_catalog
+from foodrag.safety import DISCLAIMER
+from foodrag.text import clean_ocr_text, md_escape
+from foodrag.versioning import read_json
 
-st.set_page_config(page_title="添加物チェック", page_icon="🔍", layout="centered")
+st.set_page_config(page_title="添加物チェック｜Sarashina Food Additive RAG", page_icon="🔍", layout="centered")
+cfg = load_config()
 
-st.markdown(
-    """
-<style>
-.block-container{max-width:760px;padding-top:2rem}
-.badge{display:inline-block;font-size:12px;font-weight:700;padding:2px 10px;border-radius:999px;margin-right:6px}
-.high{color:#c0392b;background:#fbeae8}.medium{color:#b9770e;background:#fdf3e1}.low{color:#4a7c59;background:#eaf3ec}
-.cite{font-size:11px;font-weight:700;color:#1f4e5f;background:#e6f0f2;border-radius:4px;padding:0 5px;margin-left:2px}
-.summary{background:#f7f9f9;border-left:4px solid #1f4e5f;padding:12px 16px;border-radius:6px;line-height:1.8}
-.small{color:#6b6a66;font-size:13px}
-</style>
-""",
-    unsafe_allow_html=True,
+BADGE = {"high": ("注意度 高", "red"), "medium": ("注意度 中", "orange"), "low": ("注意度 低", "green")}
+
+
+# ---- リソース（キャッシュ）----------------------------------------------------
+@st.cache_resource(show_spinner="Sarashina を読み込んでいます（初回はダウンロードに1〜2分かかります）…")
+def get_model(base: str, adapter_path: str | None) -> SarashinaModel | None:
+    try:
+        return SarashinaModel(base, adapter_path, cfg["model"]["device"], cfg["model"]["dtype"])
+    except Exception as e:  # noqa: BLE001  モデルが使えなくても資料ベースで動かす
+        st.session_state["model_error"] = f"{type(e).__name__}: {e}"
+        return None
+
+
+@st.cache_resource(show_spinner="添加物の参考文書（RAGインデックス）を読み込んでいます…")
+def get_retriever(version_key: str) -> Retriever:
+    return Retriever(cfg)
+
+
+@st.cache_resource
+def get_catalog(version_key: str) -> dict:
+    return load_catalog(cfg)
+
+
+def ensure_index() -> Retriever | None:
+    try:
+        if docs_changed_since_index(cfg):
+            with st.spinner("RAGインデックスを作成しています…"):
+                build_index(cfg)
+        man = read_json(resolve(cfg["rag"]["index_dir"]) / "manifest.json")
+        return get_retriever(man["version"])
+    except Exception as e:  # noqa: BLE001
+        st.session_state["rag_error"] = f"{type(e).__name__}: {e}"
+        return None
+
+
+@st.cache_data(show_spinner=False, max_entries=30)
+def ocr_cached(data: bytes, ocr_key: str) -> tuple[str, str]:
+    return read_label(Image.open(io.BytesIO(data)), cfg["ocr"])
+
+
+# ---- サイドバー -------------------------------------------------------------
+st.sidebar.title("🔍 添加物チェック")
+st.sidebar.caption("Sarashina Food Additive RAG　v" + __version__)
+adapters = list_adapters(cfg["model"]["adapters_dir"])
+default_adapter = resolve_adapter(cfg["model"]["adapter"], cfg["model"]["adapters_dir"])
+if adapters:
+    options = [a["path"] for a in adapters]
+    idx = options.index(str(default_adapter)) if str(default_adapter) in options else 0
+    adapter_path = st.sidebar.selectbox("LoRAアダプター", options, index=idx,
+                                        format_func=lambda p: next(a["run_id"] for a in adapters if a["path"] == p))
+else:
+    adapter_path = None
+    st.sidebar.info("LoRAアダプターは未学習です（ベースモデルで説明を生成）。README の手順で学習できます。")
+st.sidebar.markdown(
+    "- 文字読み取り：" + ("Sarashina2.2-OCR" if pick_backend(cfg["ocr"]["backend"]) == "sarashina" else "Tesseract（日本語）")
+    + "\n- 説明生成：" + md_escape(cfg["model"]["base_model"].split("/")[-1])
+    + "\n- RAG：" + md_escape(cfg["rag"]["embedding_model"].split("/")[-1]) + " ＋ FAISS"
 )
+st.sidebar.warning(DISCLAIMER)
 
-LEVEL = {"high": "注意度 高", "medium": "注意度 中", "low": "注意度 低"}
-
-
-def cite_html(text: str) -> str:
-    t = html.escape(text)
-    return re.sub(r"\[(D\d+)\]", r'<span class="cite">\1</span>', t).replace("\n", "<br>")
-
-
-@st.cache_data(show_spinner=False, max_entries=50)
-def ocr_cached(data: bytes) -> str:
-    import io
-    return read_label(Image.open(io.BytesIO(data)))
+model = get_model(cfg["model"]["base_model"], adapter_path)
+retriever = ensure_index()
+man_version = retriever.version if retriever else "no-index"
+catalog = get_catalog(man_version)
 
 
-@st.cache_data(show_spinner=False, max_entries=50)
-def analyze_cached(text: str) -> dict:
-    return analyze_text(text)
-
-
-# ---------------------------------------------------------------- 画面
+# ---- 画面 ---------------------------------------------------------------------
 st.title("🔍 添加物チェック")
-st.caption("食品ラベル（原材料名）の写真から、がんとの関連が指摘されている添加物を根拠つきで説明します。")
+st.caption("食品ラベル（原材料名）の写真から、がんとの関連が指摘されている添加物を、根拠（出典）つきで説明します。")
 
 # 機能1：写真をアップ
 tab_up, tab_cam = st.tabs(["📁 写真をアップ", "📷 カメラで撮る"])
@@ -61,89 +105,97 @@ with tab_cam:
     cam = st.camera_input("原材料名を撮影", label_visibility="collapsed")
 photo = up or cam
 
-if photo is not None:
-    data = photo.getvalue()
-    st.image(data, width="stretch")
-    if st.session_state.get("photo_id") != hash(data):
-        st.session_state.photo_id = hash(data)
-        with st.spinner("ラベルの文字を読み取っています…"):
-            try:
-                st.session_state.ocr_text = ocr_cached(data)
-            except Exception as e:
-                st.session_state.ocr_text = ""
-                st.error(f"文字を読み取れませんでした：{e}")
+if photo is None:
+    st.info("原材料名の欄が大きく、明るく写るように撮影すると読み取り精度が上がります。")
+    st.stop()
 
-if st.session_state.get("ocr_text") is not None and photo is not None:
-    with st.expander("読み取った文字を確認・修正する", expanded=False):
-        st.caption("読み取りに誤りがあれば修正して「再判定」を押してください。")
-        edited = st.text_area("読み取り結果", st.session_state.ocr_text, height=160, label_visibility="collapsed")
-        if st.button("再判定"):
-            st.session_state.ocr_text = edited
+data = photo.getvalue()
+try:
+    Image.open(io.BytesIO(data)).verify()
+except (UnidentifiedImageError, OSError):
+    st.error("画像ファイルを読み込めませんでした。JPEG または PNG の写真を選んでください。")
+    st.stop()
+st.image(data, width="stretch")
 
-    text = st.session_state.ocr_text
-    if not text.strip():
-        st.warning("文字が読み取れませんでした。原材料名の部分を明るく・大きく撮り直してください。")
-        st.stop()
+photo_id = hashlib.sha1(data).hexdigest()[:16]
+if st.session_state.get("photo_id") != photo_id:
+    with st.spinner("ラベルの文字を読み取っています…"):
+        text, engine = ocr_cached(data, cfg["ocr"]["backend"] + str(cfg["ocr"].get("tesseract_best")))
+    st.session_state.update(photo_id=photo_id, ocr_text=text, ocr_engine=engine)
 
-    with st.spinner("添加物を調べ、Sarashinaが説明を作成しています…（初回はモデルの読み込みに1〜2分かかります）"):
-        r = analyze_cached(text)
+with st.expander("読み取った文字を確認・修正する"):
+    st.caption("読み取りに誤りがあれば修正して「再判定」を押してください。")
+    edited = st.text_area("読み取り結果", st.session_state["ocr_text"], height=180, label_visibility="collapsed")
+    if st.button("再判定"):
+        st.session_state["ocr_text"] = clean_ocr_text(edited)
+        st.session_state["ocr_engine"] += "（手動修正）"
 
-    # 機能2：危険な添加物の説明
-    st.subheader("判定結果")
-    if r["findings"]:
-        n = {lv: sum(f["risk_level"] == lv for f in r["findings"]) for lv in LEVEL}
-        c1, c2, c3 = st.columns(3)
-        c1.metric("注意度 高", f"{n['high']}件")
-        c2.metric("注意度 中", f"{n['medium']}件")
-        c3.metric("注意度 低", f"{n['low']}件")
-    else:
-        st.success("がんとの関連が指摘されている添加物は見つかりませんでした。")
+text = st.session_state["ocr_text"]
+if not text.strip():
+    st.warning("文字が読み取れませんでした。原材料名の部分を明るく・大きく撮り直してください。")
+    st.stop()
 
-    st.markdown("**Sarashinaによる解説**" if not r["fallback_used"] else "**解説**（資料から作成）")
-    st.markdown(f'<div class="summary">{cite_html(r["explanation"])}</div>', unsafe_allow_html=True)
-    v = r["verification"]
-    st.markdown(
-        f'<p class="small">根拠チェック：解説文の{round(v["coverage"] * 100)}%が出典の内容と一致'
-        + ("。モデル出力の裏付けが弱かったため、資料から作成した解説を表示しています。" if r["fallback_used"] and r["llm_mode"] != "off" else "")
-        + "</p>",
-        unsafe_allow_html=True,
-    )
+key = hashlib.sha1((text + man_version + str(adapter_path) + __version__).encode()).hexdigest()
+if st.session_state.get("result_key") != key:
+    with st.spinner("添加物を調べ、Sarashina が根拠付きの説明を作成しています…"):
+        st.session_state["result"] = analyze_text(text, st.session_state["ocr_engine"], model, retriever,
+                                                  catalog, cfg)
+    st.session_state["result_key"] = key
+r = st.session_state["result"]
 
-    if r.get("llm_raw"):
-        with st.expander("Sarashinaの出力（そのまま）を見る"):
-            st.caption("根拠（出典の内容）と一致した文だけを上の解説に採用しています。")
-            st.text(r["llm_raw"])
-    if r.get("llm_error"):
-        st.caption(f"説明生成モデルでエラーが発生したため、資料から解説を作成しました：{r['llm_error'][:200]}")
+# 機能2：危険な添加物の説明
+st.subheader("判定結果")
+if r.findings:
+    cols = st.columns(3)
+    for col, lv in zip(cols, ("high", "medium", "low")):
+        col.metric(BADGE[lv][0], f"{sum(f.risk_level == lv for f in r.findings)}件")
+else:
+    st.success("がんとの関連が指摘されている添加物は見つかりませんでした。")
 
-    if r["findings"]:
-        st.subheader("見つかった添加物")
-        for f in r["findings"]:
-            label = f["name"] if f["label_text"] == f["name"] else f"{f['label_text']} → {f['name']}"
-            st.markdown(
-                f'<span class="badge {f["risk_level"]}">{LEVEL[f["risk_level"]]}</span>'
-                f'<b>{html.escape(label)}</b><span class="cite">{f["ref"]}</span>',
-                unsafe_allow_html=True,
-            )
-            st.markdown(f'<p class="small">IARC分類：{html.escape(f["iarc_group"])}｜{html.escape(f["category"])}</p>', unsafe_allow_html=True)
-            st.write(f["summary"])
-            with st.expander("詳しく見る"):
-                st.markdown(f"**根拠**　{f['evidence']}")
-                st.markdown(f"**日本での扱い**　{f['japan_status']}")
-                st.markdown(f"**アドバイス**　{f['advice']}")
-            st.divider()
+st.markdown("**Sarashina による解説**" if r.answer_source.startswith("sarashina") else "**解説**（参考文書から作成）")
+with st.container(border=True):
+    for line in r.answer.splitlines():
+        if line.strip():
+            st.markdown(md_escape(line))
+st.caption(f"根拠チェック：解説文の {round(r.coverage * 100)}% が参考文書の内容と一致"
+           + ("　／　Sarashina の出力に根拠を確認できる文が無かったため、参考文書から作成しました"
+              if r.generation_mode != "off" and r.answer_source == "資料" else ""))
+if r.raw_output:
+    with st.expander("Sarashina の出力（そのまま）"):
+        st.caption("参考文書と内容が一致した文だけを上の解説に採用しています。")
+        st.text(r.raw_output)
+if r.error:
+    st.caption("説明生成でエラーが発生したため、参考文書から作成しました：" + md_escape(r.error[:200]))
 
-    st.subheader("根拠（出典）")
-    for k, s in r["sources"].items():
-        with st.expander(f"{k}　{s['name']}"):
-            st.write(s["evidence"])
-            for x in s["sources"]:
-                st.markdown(f"- [{x['title']}]({x['url']})")
+if r.findings:
+    st.subheader("見つかった添加物")
+    for f in r.findings:
+        with st.container(border=True):
+            label, color = BADGE.get(f.risk_level, ("-", "gray"))
+            st.badge(label, color=color)
+            st.markdown(f"**{md_escape(f.name)}**　\\[{f.ref}\\]")
+            if f.label_text and f.label_text != f.name:
+                st.caption("ラベル上の表記：" + md_escape(f.label_text))
+            st.caption(f"IARC分類：{md_escape(f.iarc_group)}　／　用途：{md_escape(f.category)}")
+            st.markdown(md_escape(f.summary))
 
-    st.info(r["disclaimer"])
+st.subheader("根拠（参考文書）")
+for ref in r.references:
+    with st.expander(md_escape(f"[{ref['n']}] {ref['title']}")):
+        st.text(ref["text"])
+        for s in ref.get("sources") or []:
+            st.markdown(f"- [{md_escape(s.get('title', ''))}]({s.get('url', '')})")
+        st.caption(f"版：{ref.get('version') or '-'}　／　更新日：{ref.get('updated') or '-'}　／　"
+                   f"{md_escape(ref.get('license') or '')}")
 
-st.markdown("---")
-st.caption(
-    f"Built with Sarashina（SB Intuitions）｜説明生成：{config.LLM_BASE.split('/')[-1]}"
-    f"｜文字読み取り：{'Sarashina2.2-OCR' if config.OCR_BACKEND == 'sarashina' else 'Tesseract'}"
-)
+with st.expander("読み取り・処理の詳細"):
+    st.caption(f"文字読み取り：{r.ocr_engine}　／　生成モード：{r.generation_mode}　／　生成時間：{r.time_sec:.1f}秒")
+    st.text("原材料名欄：" + (r.ingredients_section or "（見つかりませんでした）"))
+    st.text("添加物：" + ("、".join(r.additives) or "（なし）"))
+    st.json(r.versions)
+    for k in ("model_error", "rag_error"):
+        if st.session_state.get(k):
+            st.caption(md_escape(st.session_state[k]))
+
+st.info(DISCLAIMER)
+st.caption("Built with Sarashina（SB Intuitions）")

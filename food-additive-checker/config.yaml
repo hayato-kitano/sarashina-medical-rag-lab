@@ -1,0 +1,79 @@
+# Sarashina Food Additive RAG 設定ファイル
+# 構成は sarashina-medical-rag-lab（config.yaml / medrag）に準拠しています。
+
+model:
+  base_model: sbintuitions/sarashina2.2-0.5b-instruct-v0.1
+  # 学習済みLoRAアダプター。"latest" で models/adapters/LATEST が指すものを使用（無ければベースモデルのみ）
+  adapter: latest
+  adapters_dir: models/adapters
+  device: auto          # auto / cuda / mps / cpu
+  dtype: auto           # auto / bfloat16 / float16 / float32
+
+generation:
+  # GPU では添加物ごとの説明（full）、CPU（Streamlit Community Cloud）では短い要約（summary）
+  mode: auto            # auto / full / summary / off
+  max_new_tokens_full: 700
+  max_new_tokens_summary: 260
+  do_sample: false
+  repetition_penalty: 1.05
+  seed: 42
+
+system_prompt: |
+  あなたは食品添加物とがんの関係を一般の人に説明するアシスタントです。
+  以下を必ず守ってください。
+  - 【参考文書】に書かれている内容だけを根拠に、日本語で簡潔に説明する。
+  - 根拠にした文書の番号を各文の末尾に [1] のように示す。
+  - 参考文書に書かれていないことは推測で補わない。
+  - 「食べるとがんになる」などの断定や、個別の診断・治療の助言はしない。
+
+ocr:
+  # sarashina: Sarashina2.2-OCR（GPU必須） / tesseract: Tesseract日本語OCR（CPU向け） / auto: GPUの有無で自動選択
+  backend: auto
+  sarashina_model: sbintuitions/sarashina2.2-ocr
+  # Tesseract の高精度モデル（tessdata_best）を初回にダウンロードして使う。取得できなければ標準モデル
+  tesseract_best: true
+  tessdata_dir: outputs/tessdata
+
+rag:
+  embedding_model: intfloat/multilingual-e5-small   # テスト専用: "hashing"
+  docs_dir: data/rag_docs
+  index_dir: outputs/rag_index
+  chunk_size: 400
+  chunk_overlap: 80
+  top_k: 4
+  # 辞書（別名）に無い表記を意味検索で拾うときの下限。e5 は無関係な語でも高めに出るため、
+  # 文字の重なり（lexical_min）も同時に満たした場合だけ採用する
+  min_score: 0.86
+  lexical_min: 0.5
+  rag_instruction: |
+    以下の【参考文書】だけを根拠に答えてください。
+    回答中で根拠にした文書を [1] のように番号で示してください。
+    参考文書に答えが書かれていない場合は、推測で補わずに「参考文書には該当する情報がありません」と答えてください。
+
+grounding:
+  # Sarashina の出力を文ごとに参考文書と照合し、一致率がこの値以上の文だけを採用する
+  min_support: 0.5
+  auto_cite_min: 0.6     # 出典番号の無い文に番号を補う一致率
+
+data:
+  processed_dir: data/processed
+  n_samples: 2000
+  split: {train: 0.95, validation: 0.05}
+  seed: 42
+
+training:
+  output_dir: models/adapters
+  num_train_epochs: 2
+  learning_rate: 2.0e-4
+  per_device_train_batch_size: 4
+  gradient_accumulation_steps: 4
+  max_length: 2048
+  warmup_ratio: 0.03
+  lr_scheduler_type: cosine
+  logging_steps: 10
+  eval_steps: 100
+  lora:
+    r: 16
+    alpha: 32
+    dropout: 0.05
+    target_modules: [q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj]
