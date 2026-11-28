@@ -2,208 +2,65 @@
 base_model: sbintuitions/sarashina2.2-0.5b-instruct-v0.1
 library_name: peft
 pipeline_tag: text-generation
+license: apache-2.0
+language:
+- ja
+datasets:
+- kunishou/ApolloCorpus-ja
 tags:
 - base_model:adapter:sbintuitions/sarashina2.2-0.5b-instruct-v0.1
 - lora
 - sft
 - transformers
 - trl
+- medical
+- japanese
 ---
 
-# Model Card for Model ID
+# lora-20261121-073926-ep2
 
-<!-- Provide a quick summary of what the model is/does. -->
+[sbintuitions/sarashina2.2-0.5b-instruct-v0.1](https://huggingface.co/sbintuitions/sarashina2.2-0.5b-instruct-v0.1) を、日本語医療QAデータ（[kunishou/ApolloCorpus-ja](https://huggingface.co/datasets/kunishou/ApolloCorpus-ja)）で LoRA 追加学習したアダプターです。
+このリポジトリの Streamlit アプリで「学習後LLM」として読み込まれます。
 
+🤗 **Hugging Face で公開中**：[hayato-kitano/sarashina2.2-0.5b-medical-ja-lora](https://huggingface.co/hayato-kitano/sarashina2.2-0.5b-medical-ja-lora)（モデルカード・使い方の詳細はこちら）
 
+> ⚠️ **技術検証用です。** 診断・処方・個別の治療判断・実患者への医療助言には使用できません。
+> 0.5B の小型モデルであり、誤った医療情報を生成する可能性があります。
 
-## Model Details
+## 学習の詳細
 
-### Model Description
+| 項目 | 値 |
+|---|---|
+| ベースモデル | sbintuitions/sarashina2.2-0.5b-instruct-v0.1 |
+| 手法 | SFT + LoRA（PEFT / TRL） |
+| データ版 | data-91258c9425（ApolloCorpus-ja から品質フィルタ後に抽出、学習 4,500件 / 検証 250件） |
+| LoRA | r=16, alpha=32, dropout=0.05 |
+| 対象モジュール | q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj |
+| 学習可能パラメーター | 10,076,160 |
+| エポック | 2 |
+| 学習率 | 2e-4（cosine, warmup 3%） |
+| バッチ | 8 × 勾配累積 2 |
+| 最大長 | 1024 |
+| 精度 / 環境 | fp16 / Google Colab T4 GPU（約52分） |
 
-<!-- Provide a longer summary of what this model is. -->
+再現に必要な設定・ライブラリのバージョン・学習ログは `run_meta.json` と `loss_history.csv` にあります。
 
+### 結果
 
+| 指標 | 値 |
+|---|---|
+| train loss | 1.992 |
+| eval loss（最終） | 2.007（開始時 2.137 → 改善） |
+| eval token accuracy（最終） | 0.606 |
 
-- **Developed by:** [More Information Needed]
-- **Funded by [optional]:** [More Information Needed]
-- **Shared by [optional]:** [More Information Needed]
-- **Model type:** [More Information Needed]
-- **Language(s) (NLP):** [More Information Needed]
-- **License:** [More Information Needed]
-- **Finetuned from model [optional]:** [More Information Needed]
+## 制限事項
 
-### Model Sources [optional]
+- 学習データは英語医療コーパスの機械翻訳であり、翻訳誤りや不正確な内容を含む可能性があります。
+- 小型モデルのため、事実誤り（ハルシネーション）が起こりやすいです。根拠文書を与える RAG との併用を推奨します。
+- 緊急性のある症状（胸痛・意識障害など）への回答には使わないでください。
 
-<!-- Provide the basic links for the model. -->
+## ライセンス
 
-- **Repository:** [More Information Needed]
-- **Paper [optional]:** [More Information Needed]
-- **Demo [optional]:** [More Information Needed]
-
-## Uses
-
-<!-- Address questions around how the model is intended to be used, including the foreseeable users of the model and those affected by the model. -->
-
-### Direct Use
-
-<!-- This section is for the model use without fine-tuning or plugging into a larger ecosystem/app. -->
-
-[More Information Needed]
-
-### Downstream Use [optional]
-
-<!-- This section is for the model use when fine-tuned for a task, or when plugged into a larger ecosystem/app -->
-
-[More Information Needed]
-
-### Out-of-Scope Use
-
-<!-- This section addresses misuse, malicious use, and uses that the model will not work well for. -->
-
-[More Information Needed]
-
-## Bias, Risks, and Limitations
-
-<!-- This section is meant to convey both technical and sociotechnical limitations. -->
-
-[More Information Needed]
-
-### Recommendations
-
-<!-- This section is meant to convey recommendations with respect to the bias, risk, and technical limitations. -->
-
-Users (both direct and downstream) should be made aware of the risks, biases and limitations of the model. More information needed for further recommendations.
-
-## How to Get Started with the Model
-
-Use the code below to get started with the model.
-
-[More Information Needed]
-
-## Training Details
-
-### Training Data
-
-<!-- This should link to a Dataset Card, perhaps with a short stub of information on what the training data is all about as well as documentation related to data pre-processing or additional filtering. -->
-
-[More Information Needed]
-
-### Training Procedure
-
-<!-- This relates heavily to the Technical Specifications. Content here should link to that section when it is relevant to the training procedure. -->
-
-#### Preprocessing [optional]
-
-[More Information Needed]
-
-
-#### Training Hyperparameters
-
-- **Training regime:** [More Information Needed] <!--fp32, fp16 mixed precision, bf16 mixed precision, bf16 non-mixed precision, fp16 non-mixed precision, fp8 mixed precision -->
-
-#### Speeds, Sizes, Times [optional]
-
-<!-- This section provides information about throughput, start/end time, checkpoint size if relevant, etc. -->
-
-[More Information Needed]
-
-## Evaluation
-
-<!-- This section describes the evaluation protocols and provides the results. -->
-
-### Testing Data, Factors & Metrics
-
-#### Testing Data
-
-<!-- This should link to a Dataset Card if possible. -->
-
-[More Information Needed]
-
-#### Factors
-
-<!-- These are the things the evaluation is disaggregating by, e.g., subpopulations or domains. -->
-
-[More Information Needed]
-
-#### Metrics
-
-<!-- These are the evaluation metrics being used, ideally with a description of why. -->
-
-[More Information Needed]
-
-### Results
-
-[More Information Needed]
-
-#### Summary
-
-
-
-## Model Examination [optional]
-
-<!-- Relevant interpretability work for the model goes here -->
-
-[More Information Needed]
-
-## Environmental Impact
-
-<!-- Total emissions (in grams of CO2eq) and additional considerations, such as electricity usage, go here. Edit the suggested text below accordingly -->
-
-Carbon emissions can be estimated using the [Machine Learning Impact calculator](https://mlco2.github.io/impact#compute) presented in [Lacoste et al. (2019)](https://arxiv.org/abs/1910.09700).
-
-- **Hardware Type:** [More Information Needed]
-- **Hours used:** [More Information Needed]
-- **Cloud Provider:** [More Information Needed]
-- **Compute Region:** [More Information Needed]
-- **Carbon Emitted:** [More Information Needed]
-
-## Technical Specifications [optional]
-
-### Model Architecture and Objective
-
-[More Information Needed]
-
-### Compute Infrastructure
-
-[More Information Needed]
-
-#### Hardware
-
-[More Information Needed]
-
-#### Software
-
-[More Information Needed]
-
-## Citation [optional]
-
-<!-- If there is a paper or blog post introducing the model, the APA and Bibtex information for that should go in this section. -->
-
-**BibTeX:**
-
-[More Information Needed]
-
-**APA:**
-
-[More Information Needed]
-
-## Glossary [optional]
-
-<!-- If relevant, include terms and calculations in this section that can help readers understand the model or model card. -->
-
-[More Information Needed]
-
-## More Information [optional]
-
-[More Information Needed]
-
-## Model Card Authors [optional]
-
-[More Information Needed]
-
-## Model Card Contact
-
-[More Information Needed]
-### Framework versions
-
-- PEFT 0.21.2
+- このアダプター：Apache 2.0
+- ベースモデル：MIT License（SB Intuitions）
+- 学習データ：kunishou/ApolloCorpus-ja（Apache 2.0）
