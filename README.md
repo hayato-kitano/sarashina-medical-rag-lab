@@ -3,6 +3,8 @@
 Sarashina2.2-0.5B-Instruct を日本語医療QA（ApolloCorpus-ja）で **LoRA 追加学習**し、**RAG** と組み合わせて、
 **学習前・学習後の回答を左右に並べて比較**する技術検証アプリです（MVP要件定義書 Ver.1.0 準拠）。
 
+🤗 **学習済み LoRA アダプター（Hugging Face）**：[hayato-kitano/sarashina2.2-0.5b-medical-ja-lora](https://huggingface.co/hayato-kitano/sarashina2.2-0.5b-medical-ja-lora)
+
 > ⚠️ 技術検証用です。診断・処方・個別の治療判断・実患者への医療助言には使用できません。
 
 ## 構成
