@@ -9,6 +9,7 @@
   adapter_model.safetensors / adapter_config.json  … LoRAアダプター
   run_meta.json                                    … 学習条件・データ版・モデル版・損失履歴
   loss_history.csv                                 … ステップごとの損失
+  README.md                                        … モデルカード（PEFT の自動生成テンプレートを上書き）
   outputs/experiments.csv に1行追記、outputs/adapters/LATEST を更新
 """
 import argparse
@@ -34,6 +35,96 @@ def _warmup_kwargs(ratio: float) -> dict:
     if "warmup_ratio" in inspect.signature(SFTConfig.__init__).parameters:
         return {"warmup_ratio": ratio}
     return {"warmup_steps": ratio}
+
+
+# モデルカードに載せる Hugging Face 上の公開先と、学習データ名 → データセットID の対応
+HF_REPO_ID = "hayato-kitano/sarashina2.2-0.5b-medical-ja-lora"
+DATASET_IDS = {
+    "ApolloCorpus-ja": "kunishou/ApolloCorpus-ja",
+    "JP-AlpaCare-MedInstruct-52k": "li-lab/JP-AlpaCare-MedInstruct-52k",
+    "AnswerCarefully": "llm-jp/AnswerCarefully",
+}
+
+
+def write_model_card(out_dir, meta: dict, final_eval: dict) -> None:
+    """save_pretrained() が作る PEFT のテンプレート README（[More Information Needed]）を、
+    run_meta の内容から作ったモデルカードで上書きする。"""
+    t, lora = meta["training"], meta["lora"]
+    base = meta["base_model"]
+    sources = list((meta.get("data_sources") or {}).keys())
+    ds_ids = [DATASET_IDS.get(s, s) for s in sources]
+    ds_links = "、".join(f"[{d}](https://huggingface.co/datasets/{d})" if "/" in d else d for d in ds_ids) or "-"
+    evals = [h["eval_loss"] for h in meta.get("log_history", []) if "eval_loss" in h]
+    first_eval = evals[0] if evals else None
+    final_loss = meta.get("final_eval_loss")
+    acc = final_eval.get("eval_mean_token_accuracy")
+    minutes = round(meta["train_runtime_sec"] / 60)
+    device = "GPU" if meta["device"] == "cuda" else "CPU"
+    steps = f"（max_steps={meta['max_steps']}）" if meta.get("max_steps", -1) > 0 else ""
+
+    eval_row = f"{final_loss:.3f}" if final_loss is not None else "-"
+    if final_loss is not None and first_eval is not None:
+        eval_row += f"（開始時 {first_eval:.3f}）"
+    front = ["---", f"base_model: {base}", "library_name: peft", "pipeline_tag: text-generation",
+             "license: apache-2.0", "language:", "- ja"]
+    if ds_ids:
+        front += ["datasets:"] + [f"- {d}" for d in ds_ids if "/" in d]
+    front += ["tags:", f"- base_model:adapter:{base}", "- lora", "- sft", "- transformers", "- trl",
+              "- medical", "- japanese", "---"]
+    other = [s for s in sources if s != "ApolloCorpus-ja"]
+    data_license = "、".join(f"{DATASET_IDS.get(s, s)}" for s in sources) or "-"
+
+    card = "\n".join(front) + f"""
+
+# {meta['run_id']}
+
+[{base}](https://huggingface.co/{base}) を、日本語医療QAデータ（{ds_links}）で LoRA 追加学習したアダプターです。
+このリポジトリの Streamlit アプリで「学習後LLM」として読み込まれます。
+
+🤗 **Hugging Face で公開中**：[{HF_REPO_ID}](https://huggingface.co/{HF_REPO_ID})（モデルカード・使い方の詳細はこちら。公開版はこの run と異なる場合があります）
+
+> ⚠️ **技術検証用です。** 診断・処方・個別の治療判断・実患者への医療助言には使用できません。
+> 小型モデルであり、誤った医療情報を生成する可能性があります。
+
+## 学習の詳細
+
+| 項目 | 値 |
+|---|---|
+| ベースモデル | {base} |
+| 手法 | SFT + LoRA（PEFT / TRL） |
+| データ版 | {meta['data_version']}（学習 {meta['n_train']:,}件 / 検証 {meta['n_validation']:,}件） |
+| LoRA | r={lora['r']}, alpha={lora['alpha']}, dropout={lora['dropout']} |
+| 対象モジュール | {', '.join(lora['target_modules'])} |
+| 学習可能パラメーター | {meta['trainable_params']:,} |
+| エポック | {t['num_train_epochs']:g}{steps} |
+| 学習率 | {t['learning_rate']:g}（{t['lr_scheduler_type']}, warmup {t['warmup_ratio']:.0%}） |
+| バッチ | {t['per_device_train_batch_size']} × 勾配累積 {t['gradient_accumulation_steps']} |
+| 最大長 | {t['max_length']} |
+| 精度 / 環境 | {meta['precision']} / {device}（約{minutes}分） |
+
+再現に必要な設定・ライブラリのバージョン・学習ログは `run_meta.json` と `loss_history.csv` にあります。
+
+### 結果
+
+| 指標 | 値 |
+|---|---|
+| train loss | {meta['train_loss']:.3f} |
+| eval loss（最終） | {eval_row} |
+| eval token accuracy（最終） | {f"{acc:.3f}" if acc is not None else "-"} |
+
+## 制限事項
+
+- 学習データには英語医療コーパスの機械翻訳が含まれ、翻訳誤りや不正確な内容を含む可能性があります。
+- 小型モデルのため、事実誤り（ハルシネーション）が起こりやすいです。根拠文書を与える RAG との併用を推奨します。
+- 緊急性のある症状（胸痛・意識障害など）への回答には使わないでください。
+
+## ライセンス
+
+- このアダプター：Apache 2.0{"（ただし学習データの利用条件にも従ってください）" if other else ""}
+- ベースモデル：SB Intuitions のライセンス（{base} のモデルカードを参照）
+- 学習データ：{data_license}（各データセットの利用条件に従う）
+"""
+    (out_dir / "README.md").write_text(card, encoding="utf-8")
 
 
 def main() -> None:
@@ -153,6 +244,7 @@ def main() -> None:
         "log_history": history,
     }
     write_json(out_dir / "run_meta.json", meta)
+    write_model_card(out_dir, meta, final_eval)
 
     exp_csv = resolve(tcfg["output_dir"]).parent / "experiments.csv"
     row = {"run_id": run_id, "created_at": meta["created_at"], "base_model": base_model,
